@@ -8,10 +8,11 @@ Chatbot pada umumnya cuma kasih 1 jawaban per giliran -- kamu nggak pernah tahu 
 
 ## Fitur
 
-- 🌳 **4 cabang sekaligus per giliran** -- setiap cabang punya label gaya/nada yang jelas berbeda
+- 🌳 **2-6 cabang sekaligus per giliran** (bisa diatur) -- setiap cabang punya label gaya/nada yang jelas berbeda
+- 🎭 **Atur peran/skenario lawan bicara** -- tentukan konteks (misal "teman dekat", "atasan di kantor", "psikolog"), semua cabang menyesuaikan peran itu
 - 🔀 **Bisa kembali ke percabangan lama** -- klik pil cabang manapun di pesan sebelumnya buat pindah jalur
-- 🔄 **Coba lagi** -- nggak suka 4 opsi yang muncul? Generate ulang
-- 🎨 **Warna konsisten per cabang** -- tiap "jalur" punya warna sendiri (violet/teal/oranye/merah jambu), gampang dilacak
+- 🔄 **Coba lagi** -- nggak suka opsi yang muncul? Generate ulang
+- 🎨 **Warna konsisten per cabang** -- tiap "jalur" punya warna sendiri, gampang dilacak
 - 🔒 **Proteksi password (opsional)**
 
 ## Setup dari Nol
@@ -39,6 +40,7 @@ Tulis pesan pembuka apa saja, lihat 4 kemungkinan balasan muncul, pilih satu, la
 
 ## Catatan teknis
 
-- **1 panggilan API per giliran** -- semua 4 cabang dihasilkan sekaligus dalam satu request terstruktur, bukan 4 panggilan terpisah
+- **1 panggilan API per giliran** -- semua cabang dihasilkan sekaligus dalam satu request terstruktur, bukan beberapa panggilan terpisah
+- **Jumlah cabang & peran divalidasi di server** -- nilai `branchCount` dibatasi hanya boleh 2/4/6, dan teks skenario dipotong maksimal 200 karakter, supaya tidak bisa disalahgunakan lewat manipulasi request
 - **Parsing format terstruktur** -- AI diminta jawab dalam format `LABEL1: ...` / `TEKS1: ...` dst, lalu diparsing pakai regex di server (bukan JSON mode, supaya lebih robust kalau modelnya sedikit menyimpang dari format)
 - **Riwayat percabangan cuma di memori browser** -- refresh halaman akan menghapusnya, sesuai filosofi proyek-proyek "ringan" lainnya
