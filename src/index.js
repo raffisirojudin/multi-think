@@ -7,7 +7,8 @@
  */
 
 const GROQ_MODEL = "llama-3.1-8b-instant";
-const BRANCH_COUNT = 4;
+const DEFAULT_BRANCH_COUNT = 4;
+const VALID_BRANCH_COUNTS = [2, 4, 6];
 
 export default {
   async fetch(request, env) {
@@ -41,7 +42,7 @@ async function handleBranches(request, env) {
       return jsonResponse({ error: "GROQ_API_KEY belum diset di Secrets." }, 500);
     }
 
-    const { transcript, password } = await request.json();
+    const { transcript, password, scenario, branchCount } = await request.json();
 
     if (env.APP_PASSWORD && password !== env.APP_PASSWORD) {
       return jsonResponse({ error: "Password salah atau belum dimasukkan." }, 401);
@@ -51,22 +52,31 @@ async function handleBranches(request, env) {
       return jsonResponse({ error: "Transkrip percakapan kosong." }, 400);
     }
 
-    const branches = await generateBranches(transcript, env.GROQ_API_KEY);
+    const safeBranchCount = VALID_BRANCH_COUNTS.includes(Number(branchCount))
+      ? Number(branchCount)
+      : DEFAULT_BRANCH_COUNT;
+    const safeScenario = typeof scenario === "string" ? scenario.trim().slice(0, 200) : "";
+
+    const branches = await generateBranches(transcript, safeBranchCount, safeScenario, env.GROQ_API_KEY);
     return jsonResponse({ branches });
   } catch (err) {
     return jsonResponse({ error: err.message }, 500);
   }
 }
 
-async function generateBranches(transcript, apiKey) {
+async function generateBranches(transcript, branchCount, scenario, apiKey) {
   const formatLines = [];
-  for (let i = 1; i <= BRANCH_COUNT; i++) {
+  for (let i = 1; i <= branchCount; i++) {
     formatLines.push(`LABEL${i}: <gaya singkat 1-3 kata>`);
     formatLines.push(`TEKS${i}: <isi balasan>`);
   }
 
+  const scenarioLine = scenario
+    ? `Peran/konteks lawan bicara dalam percakapan ini: "${scenario}". Sesuaikan semua balasan dengan peran ini. `
+    : "";
+
   const systemPrompt =
-    `Kamu akan diberi potongan percakapan. Berikan ${BRANCH_COUNT} kemungkinan balasan yang ` +
+    `${scenarioLine}Kamu akan diberi potongan percakapan. Berikan ${branchCount} kemungkinan balasan yang ` +
     `BERBEDA-BEDA secara nada/pendekatan untuk melanjutkan percakapan ini sebagai lawan bicara. ` +
     `Setiap balasan harus punya gaya yang jelas berbeda satu sama lain (misal: satu antusias, satu ` +
     `skeptis, satu santai/becanda, satu serius/formal). Jawab dalam format PERSIS seperti ini, ` +
@@ -98,12 +108,12 @@ async function generateBranches(transcript, apiKey) {
 
   const data = await response.json();
   const raw = data?.choices?.[0]?.message?.content || "";
-  return parseBranches(raw);
+  return parseBranches(raw, branchCount);
 }
 
-function parseBranches(raw) {
+function parseBranches(raw, branchCount) {
   const branches = [];
-  for (let i = 1; i <= BRANCH_COUNT; i++) {
+  for (let i = 1; i <= branchCount; i++) {
     const labelMatch = raw.match(new RegExp(`LABEL${i}:\\s*(.+)`));
     const textMatch = raw.match(new RegExp(`TEKS${i}:\\s*([\\s\\S]*?)(?=\\n?LABEL${i + 1}:|$)`));
     if (labelMatch && textMatch && textMatch[1].trim()) {
@@ -167,6 +177,32 @@ const HTML_PAGE = `<!DOCTYPE html>
   header { text-align: center; margin-bottom: 22px; }
   header h1 { margin: 0; font-family: 'Outfit', sans-serif; font-size: 28px; font-weight: 700; }
   header p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+
+  .settings {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .settings input {
+    flex: 1;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+  }
+  .settings input::placeholder { color: var(--muted); }
+  .settings select {
+    padding: 10px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+  }
 
   #path-container { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
   .bubble {
@@ -302,6 +338,15 @@ const HTML_PAGE = `<!DOCTYPE html>
       <p>AI menyiapkan beberapa kemungkinan balasan sekaligus -- kamu pilih jalannya.</p>
     </header>
 
+    <div class="settings">
+      <input id="scenario-input" type="text" placeholder="Peran/skenario lawan bicara (opsional)... misal: teman dekat" aria-label="Peran atau skenario AI" />
+      <select id="branch-count-select" aria-label="Jumlah cabang per giliran">
+        <option value="2">2 cabang</option>
+        <option value="4" selected>4 cabang</option>
+        <option value="6">6 cabang</option>
+      </select>
+    </div>
+
     <div id="path-container"></div>
     <div id="frontier-container"></div>
     <p class="status" id="status" role="status" aria-live="polite"></p>
@@ -320,7 +365,7 @@ const HTML_PAGE = `<!DOCTYPE html>
   </div>
 
   <script>
-    const BRANCH_COLORS = ["#b388ff", "#4fd1c5", "#ffb86b", "#ff7597"];
+    const BRANCH_COLORS = ["#b388ff", "#4fd1c5", "#ffb86b", "#ff7597", "#7ec8e3", "#c9e265"];
 
     // ---------- Gerbang password ----------
     const gateEl = document.getElementById("gate");
@@ -376,6 +421,8 @@ const HTML_PAGE = `<!DOCTYPE html>
     const replyForm = document.getElementById("reply-form");
     const replyInput = document.getElementById("reply-input");
     const resetBtn = document.getElementById("reset-btn");
+    const scenarioInput = document.getElementById("scenario-input");
+    const branchCountSelect = document.getElementById("branch-count-select");
 
     let path = [];
     let frontierBranches = [];
@@ -459,7 +506,12 @@ const HTML_PAGE = `<!DOCTYPE html>
         const res = await fetch("/api/branches", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ transcript: buildTranscript(), password: appPassword }),
+          body: JSON.stringify({
+            transcript: buildTranscript(),
+            password: appPassword,
+            scenario: scenarioInput.value.trim(),
+            branchCount: parseInt(branchCountSelect.value, 10),
+          }),
         });
         const data = await res.json();
         if (data.error) {
@@ -514,6 +566,8 @@ const HTML_PAGE = `<!DOCTYPE html>
       path = [];
       frontierBranches = [];
       statusEl.textContent = "";
+      scenarioInput.value = "";
+      branchCountSelect.value = "4";
       render();
     });
 
